@@ -2,7 +2,7 @@
 create table public.items (
  id uuid primary key default gen_random_uuid(), owner_id uuid not null references auth.users(id),
  title text not null check(char_length(title) between 3 and 100), description text not null check(char_length(description) between 10 and 3000),
- category text not null check(category in ('تصوير','رحلات','أدوات ومعدات','رياضة','منزل','إلكترونيات','تجهيز الحفلات','أدوات مطبخ')),
+ category text not null check(category in ('تصوير','رحلات','أدوات ومعدات','رياضة','منزل','إلكترونيات','تجهيز الحفلات','أدوات مطبخ','أخرى')),
  contact_phone text not null check(contact_phone ~ '^\+[1-9][0-9]{7,14}$'),
  daily_price numeric(10,2) not null check(daily_price>0 and daily_price<=100000), area text not null check(char_length(area) between 2 and 100),
  lat double precision not null check(lat between -90 and 90), lng double precision not null check(lng between -180 and 180),
@@ -26,9 +26,8 @@ alter table public.messages enable row level security;
 alter table public.reviews enable row level security;
 create policy items_read on public.items for select using(true);
 create policy bookings_read on public.bookings for select to authenticated using(auth.uid() in (owner_id,renter_id));
-create policy locations_read on public.item_locations for select to authenticated using(
- exists(select 1 from public.items i where i.id=item_id and i.owner_id=auth.uid()) or
- exists(select 1 from public.bookings b where b.item_id=item_locations.item_id and b.renter_id=auth.uid() and b.status in ('accepted','completed')));
+-- item_locations has no select policy at all: the exact address is never sent to any client.
+-- Only get_pickup_distance() (security definer, bypasses RLS) may read it, and it returns a distance, not coordinates.
 create policy messages_read on public.messages for select to authenticated using(exists(select 1 from public.bookings b where b.id=booking_id and auth.uid() in (b.owner_id,b.renter_id)));
 create policy messages_send on public.messages for insert to authenticated with check(sender_id=auth.uid() and exists(select 1 from public.bookings b where b.id=booking_id and auth.uid() in(b.owner_id,b.renter_id) and b.status in ('pending','accepted','completed')));
 create policy reviews_read on public.reviews for select using(true);
@@ -53,6 +52,21 @@ begin
  insert into bookings(item_id,renter_id,owner_id) values(p_item,auth.uid(),v_item.owner_id) returning id into v_id;return v_id;
 exception when unique_violation then raise exception 'لديك طلب قائم بالفعل لهذا الغرض';
 end $$;
+-- Returns only a distance in km, never the stored exact coordinates. The public
+-- item row keeps an approximate location; this is the sole way to learn more,
+-- and only for the owner or a renter with an accepted/completed request.
+create function public.get_pickup_distance(p_item uuid,p_lat double precision,p_lng double precision) returns numeric
+language plpgsql security definer set search_path=public,pg_temp as $$
+declare v_item items%rowtype; v_loc item_locations%rowtype; v_allowed boolean;
+begin
+ if auth.uid() is null then raise exception 'يلزم تسجيل الدخول'; end if;
+ select * into strict v_item from items where id=p_item;
+ select * into v_loc from item_locations where item_id=p_item;
+ if v_loc.item_id is null then raise exception 'الموقع غير متاح'; end if;
+ v_allowed:=v_item.owner_id=auth.uid() or exists(select 1 from bookings b where b.item_id=p_item and b.renter_id=auth.uid() and b.status in ('accepted','completed'));
+ if not v_allowed then raise exception 'غير مصرح'; end if;
+ return round((2*6371*asin(sqrt(sin(radians(v_loc.lat-p_lat)/2)^2+cos(radians(p_lat))*cos(radians(v_loc.lat))*sin(radians(v_loc.lng-p_lng)/2)^2)))::numeric,1);
+end $$;
 create function public.change_booking(p_booking uuid,p_status text) returns void
 language plpgsql security definer set search_path=public,pg_temp as $$
 declare b bookings%rowtype;
@@ -67,12 +81,14 @@ end $$;
 revoke all on function public.create_item(text,text,text,numeric,text,text,double precision,double precision,text[]) from public;
 revoke all on function public.request_contact(uuid) from public;
 revoke all on function public.change_booking(uuid,text) from public;
+revoke all on function public.get_pickup_distance(uuid,double precision,double precision) from public;
 grant execute on function public.create_item(text,text,text,numeric,text,text,double precision,double precision,text[]) to authenticated;
 grant execute on function public.request_contact(uuid) to authenticated;
 grant execute on function public.change_booking(uuid,text) to authenticated;
+grant execute on function public.get_pickup_distance(uuid,double precision,double precision) to authenticated;
 revoke all on public.items,public.item_locations,public.bookings,public.messages,public.reviews from anon,authenticated;
 grant select on public.items,public.reviews to anon,authenticated;
-grant select on public.item_locations,public.bookings,public.messages to authenticated;
+grant select on public.bookings,public.messages to authenticated;
 grant insert on public.messages,public.reviews to authenticated;
 insert into storage.buckets(id,name,public,file_size_limit,allowed_mime_types) values('item-images','item-images',true,5242880,array['image/jpeg','image/png','image/webp']);
 create policy images_upload on storage.objects for insert to authenticated with check(bucket_id='item-images' and (storage.foldername(name))[1]=auth.uid()::text);
