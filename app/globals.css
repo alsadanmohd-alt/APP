@@ -6,6 +6,7 @@
 .contact-row{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-top:6px}
 .contact-row a{display:inline-flex;align-items:center;gap:7px}
 .booking p a{display:inline-flex;align-items:center;gap:6px}
+.location .brand-symbol.tiny{width:20px;height:20px;border-radius:6px;transform:rotate(-7deg);flex-shrink:0}
 
 .mobile-bottom-nav{display:none}
 @media(max-width:760px){
