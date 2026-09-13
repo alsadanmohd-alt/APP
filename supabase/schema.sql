@@ -9,27 +9,33 @@ create table public.items (
  images text[] not null default '{}', created_at timestamptz not null default now(), check(cardinality(images)<=5)
 );
 create table public.item_locations(item_id uuid primary key references public.items(id) on delete cascade,lat double precision not null check(lat between -90 and 90),lng double precision not null check(lng between -180 and 180));
+-- No approval step: a "booking" row is just an open contact thread between a
+-- renter and an owner about an item. Renter and owner coordinate everything
+-- else (dates, price, handover) directly by phone or chat.
 create table public.bookings (
- id uuid primary key default gen_random_uuid(), item_id uuid not null references public.items(id), renter_id uuid not null references auth.users(id), owner_id uuid not null references auth.users(id),
- status text not null default 'pending' check(status in ('pending','accepted','rejected','cancelled','completed')), created_at timestamptz not null default now(),
+ id uuid primary key default gen_random_uuid(), item_id uuid not null references public.items(id) on delete cascade, renter_id uuid not null references auth.users(id), owner_id uuid not null references auth.users(id),
+ status text not null default 'active' check(status in ('active','completed')), created_at timestamptz not null default now(),
  check(owner_id<>renter_id)
 );
 create index bookings_participants on public.bookings(renter_id,owner_id);
-create unique index bookings_one_pending on public.bookings(item_id,renter_id) where(status='pending');
-create table public.messages(id uuid primary key default gen_random_uuid(),booking_id uuid not null references public.bookings(id),sender_id uuid not null references auth.users(id),body text not null check(char_length(trim(body)) between 1 and 2000),created_at timestamptz not null default now());
+create unique index bookings_one_per_renter on public.bookings(item_id,renter_id);
+create table public.messages(id uuid primary key default gen_random_uuid(),booking_id uuid not null references public.bookings(id) on delete cascade,sender_id uuid not null references auth.users(id),body text not null check(char_length(trim(body)) between 1 and 2000),created_at timestamptz not null default now());
 create index messages_booking on public.messages(booking_id,created_at);
-create table public.reviews(id uuid primary key default gen_random_uuid(),booking_id uuid not null unique references public.bookings(id),item_id uuid not null references public.items(id),author_id uuid not null references auth.users(id),rating int not null check(rating between 1 and 5),body text not null check(char_length(trim(body)) between 1 and 1000),created_at timestamptz not null default now());
+create table public.reviews(id uuid primary key default gen_random_uuid(),booking_id uuid not null unique references public.bookings(id) on delete cascade,item_id uuid not null references public.items(id),author_id uuid not null references auth.users(id),rating int not null check(rating between 1 and 5),body text not null check(char_length(trim(body)) between 1 and 1000),created_at timestamptz not null default now());
 alter table public.items enable row level security;
 alter table public.item_locations enable row level security;
 alter table public.bookings enable row level security;
 alter table public.messages enable row level security;
 alter table public.reviews enable row level security;
 create policy items_read on public.items for select using(true);
+create policy items_delete on public.items for delete to authenticated using(owner_id=auth.uid());
 create policy bookings_read on public.bookings for select to authenticated using(auth.uid() in (owner_id,renter_id));
 -- item_locations has no select policy at all: the exact address is never sent to any client.
--- Only get_pickup_distance() (security definer, bypasses RLS) may read it, and it returns a distance, not coordinates.
+-- Only get_pickup_distance() and get_owner_item_location() (security definer, bypass RLS) may
+-- read it: the first returns a distance to a renter, the second returns coordinates but only
+-- to the item's own owner (for editing), never to anyone else.
 create policy messages_read on public.messages for select to authenticated using(exists(select 1 from public.bookings b where b.id=booking_id and auth.uid() in (b.owner_id,b.renter_id)));
-create policy messages_send on public.messages for insert to authenticated with check(sender_id=auth.uid() and exists(select 1 from public.bookings b where b.id=booking_id and auth.uid() in(b.owner_id,b.renter_id) and b.status in ('pending','accepted','completed')));
+create policy messages_send on public.messages for insert to authenticated with check(sender_id=auth.uid() and exists(select 1 from public.bookings b where b.id=booking_id and auth.uid() in(b.owner_id,b.renter_id)));
 create policy reviews_read on public.reviews for select using(true);
 create policy reviews_write on public.reviews for insert to authenticated with check(author_id=auth.uid() and exists(select 1 from public.bookings b where b.id=booking_id and b.item_id=reviews.item_id and b.renter_id=auth.uid() and b.status='completed'));
 -- Atomic creation: exact coordinates never enter public item rows.
@@ -41,20 +47,41 @@ begin
  insert into items(owner_id,title,description,category,daily_price,contact_phone,area,lat,lng,images) values(auth.uid(),p_title,p_description,p_category,p_price,p_phone,p_area,round(p_lat::numeric,2),round(p_lng::numeric,2),p_images) returning id into v_id;
  insert into item_locations values(v_id,p_lat,p_lng); return v_id;
 end $$;
--- Contact request: no dates or deposit. Renter and owner coordinate the rental period directly by phone or chat.
-create function public.request_contact(p_item uuid) returns uuid
+-- p_images null keeps the item's existing photos unchanged; pass a full array to replace them.
+create function public.update_item(p_id uuid,p_title text,p_description text,p_category text,p_price numeric,p_phone text,p_area text,p_lat double precision,p_lng double precision,p_images text[] default null) returns void
 language plpgsql security definer set search_path=public,pg_temp as $$
-declare v_item items%rowtype;v_id uuid;
+begin
+ if auth.uid() is null then raise exception 'يلزم تسجيل الدخول'; end if;
+ if not exists(select 1 from items where id=p_id and owner_id=auth.uid()) then raise exception 'غير مصرح'; end if;
+ update items set title=p_title,description=p_description,category=p_category,daily_price=p_price,contact_phone=p_phone,area=p_area,lat=round(p_lat::numeric,2),lng=round(p_lng::numeric,2),images=coalesce(p_images,images) where id=p_id;
+ update item_locations set lat=p_lat,lng=p_lng where item_id=p_id;
+end $$;
+-- Lets an owner see their own item's exact pickup point again when editing it. Never callable for anyone else's item.
+create function public.get_owner_item_location(p_item uuid) returns table(lat double precision,lng double precision)
+language plpgsql security definer set search_path=public,pg_temp as $$
+begin
+ if auth.uid() is null then raise exception 'يلزم تسجيل الدخول'; end if;
+ if not exists(select 1 from items where id=p_item and owner_id=auth.uid()) then raise exception 'غير مصرح'; end if;
+ return query select l.lat,l.lng from item_locations l where l.item_id=p_item;
+end $$;
+-- Starts (or returns the existing) contact thread for this renter and item. No approval needed:
+-- the renter can message or call the owner immediately.
+create function public.start_conversation(p_item uuid) returns uuid
+language plpgsql security definer set search_path=public,pg_temp as $$
+declare v_item items%rowtype; v_id uuid;
 begin
  if auth.uid() is null then raise exception 'يلزم تسجيل الدخول'; end if;
  select * into strict v_item from items where id=p_item;
  if v_item.owner_id=auth.uid() then raise exception 'لا يمكنك التواصل بخصوص غرضك'; end if;
- insert into bookings(item_id,renter_id,owner_id) values(p_item,auth.uid(),v_item.owner_id) returning id into v_id;return v_id;
-exception when unique_violation then raise exception 'لديك طلب قائم بالفعل لهذا الغرض';
+ select id into v_id from bookings where item_id=p_item and renter_id=auth.uid();
+ if v_id is null then
+  insert into bookings(item_id,renter_id,owner_id) values(p_item,auth.uid(),v_item.owner_id) returning id into v_id;
+ end if;
+ return v_id;
 end $$;
 -- Returns only a distance in km, never the stored exact coordinates. The public
 -- item row keeps an approximate location; this is the sole way to learn more,
--- and only for the owner or a renter with an accepted/completed request.
+-- and only for the item's owner or a renter who has started a conversation about it.
 create function public.get_pickup_distance(p_item uuid,p_lat double precision,p_lng double precision) returns numeric
 language plpgsql security definer set search_path=public,pg_temp as $$
 declare v_item items%rowtype; v_loc item_locations%rowtype; v_allowed boolean;
@@ -63,32 +90,37 @@ begin
  select * into strict v_item from items where id=p_item;
  select * into v_loc from item_locations where item_id=p_item;
  if v_loc.item_id is null then raise exception 'الموقع غير متاح'; end if;
- v_allowed:=v_item.owner_id=auth.uid() or exists(select 1 from bookings b where b.item_id=p_item and b.renter_id=auth.uid() and b.status in ('accepted','completed'));
+ v_allowed:=v_item.owner_id=auth.uid() or exists(select 1 from bookings b where b.item_id=p_item and b.renter_id=auth.uid());
  if not v_allowed then raise exception 'غير مصرح'; end if;
  return round((2*6371*asin(sqrt(sin(radians(v_loc.lat-p_lat)/2)^2+cos(radians(p_lat))*cos(radians(v_loc.lat))*sin(radians(v_loc.lng-p_lng)/2)^2)))::numeric,1);
 end $$;
-create function public.change_booking(p_booking uuid,p_status text) returns void
+-- The only remaining status transition: the owner flags a conversation as a completed
+-- rental so its renter can leave one review.
+create function public.mark_completed(p_booking uuid) returns void
 language plpgsql security definer set search_path=public,pg_temp as $$
 declare b bookings%rowtype;
 begin
  select * into strict b from bookings where id=p_booking for update;
- if auth.uid() is null or auth.uid() not in(b.owner_id,b.renter_id) then raise exception 'غير مصرح'; end if;
- if p_status in ('accepted','rejected') and b.status='pending' and auth.uid()=b.owner_id then update bookings set status=p_status where id=b.id;
- elsif p_status='cancelled' and b.status='pending' and auth.uid()=b.renter_id then update bookings set status=p_status where id=b.id;
- elsif p_status='completed' and b.status='accepted' and auth.uid()=b.owner_id then update bookings set status=p_status where id=b.id;
- else raise exception 'لا يمكن تغيير حالة هذا الحجز'; end if;
+ if auth.uid() is null or auth.uid()<>b.owner_id then raise exception 'غير مصرح'; end if;
+ if b.status<>'active' then raise exception 'لا يمكن تغيير حالة هذا التواصل'; end if;
+ update bookings set status='completed' where id=b.id;
 end $$;
 revoke all on function public.create_item(text,text,text,numeric,text,text,double precision,double precision,text[]) from public;
-revoke all on function public.request_contact(uuid) from public;
-revoke all on function public.change_booking(uuid,text) from public;
+revoke all on function public.update_item(uuid,text,text,text,numeric,text,text,double precision,double precision,text[]) from public;
+revoke all on function public.get_owner_item_location(uuid) from public;
+revoke all on function public.start_conversation(uuid) from public;
 revoke all on function public.get_pickup_distance(uuid,double precision,double precision) from public;
+revoke all on function public.mark_completed(uuid) from public;
 grant execute on function public.create_item(text,text,text,numeric,text,text,double precision,double precision,text[]) to authenticated;
-grant execute on function public.request_contact(uuid) to authenticated;
-grant execute on function public.change_booking(uuid,text) to authenticated;
+grant execute on function public.update_item(uuid,text,text,text,numeric,text,text,double precision,double precision,text[]) to authenticated;
+grant execute on function public.get_owner_item_location(uuid) to authenticated;
+grant execute on function public.start_conversation(uuid) to authenticated;
 grant execute on function public.get_pickup_distance(uuid,double precision,double precision) to authenticated;
+grant execute on function public.mark_completed(uuid) to authenticated;
 revoke all on public.items,public.item_locations,public.bookings,public.messages,public.reviews from anon,authenticated;
 grant select on public.items,public.reviews to anon,authenticated;
 grant select on public.bookings,public.messages to authenticated;
+grant delete on public.items to authenticated;
 grant insert on public.messages,public.reviews to authenticated;
 insert into storage.buckets(id,name,public,file_size_limit,allowed_mime_types) values('item-images','item-images',true,5242880,array['image/jpeg','image/png','image/webp']);
 create policy images_upload on storage.objects for insert to authenticated with check(bucket_id='item-images' and (storage.foldername(name))[1]=auth.uid()::text);

@@ -7,6 +7,13 @@
 .contact-row a{display:inline-flex;align-items:center;gap:7px}
 .booking p a{display:inline-flex;align-items:center;gap:6px}
 .location .brand-symbol.tiny{width:20px;height:20px;border-radius:6px;transform:rotate(-7deg);flex-shrink:0}
+.own-item{display:flex;flex-direction:column}
+.own-item-open{display:block;width:100%;text-align:right;padding:0}
+.own-item-actions{display:flex;gap:8px;padding:10px 14px 14px}
+.own-item-actions button{flex:1;font-size:13px;padding:8px 10px;min-height:36px}
+.secondary.danger{color:#b23b2f;border-color:#f0c9c2}
+.secondary.danger:hover{background:#fdecea}
+.status.active{background:#f8efd7;color:#896213}
 
 .mobile-bottom-nav{display:none}
 @media(max-width:760px){
