@@ -26,6 +26,8 @@ create table public.reviews(id uuid primary key default gen_random_uuid(),bookin
 create table public.renter_reviews(id uuid primary key default gen_random_uuid(),booking_id uuid not null unique references public.bookings(id) on delete cascade,renter_id uuid not null references auth.users(id),author_id uuid not null references auth.users(id),rating int not null check(rating between 1 and 5),body text not null check(char_length(trim(body)) between 1 and 1000),created_at timestamptz not null default now());
 -- One row per user, chosen once at first login and shown publicly on their listings and profile.
 create table public.profiles(id uuid primary key references auth.users(id) on delete cascade,display_name text not null check(char_length(trim(display_name)) between 2 and 40),created_at timestamptz not null default now());
+-- Case-insensitive and trims surrounding whitespace before comparing.
+create unique index profiles_display_name_unique on public.profiles(lower(trim(display_name)));
 alter table public.items enable row level security;
 alter table public.item_locations enable row level security;
 alter table public.bookings enable row level security;
