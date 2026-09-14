@@ -9,6 +9,13 @@ test('RLS, contact validation, private locations, chat, edit/delete',{skip:!(url
  try{
   for(let i=0;i<3;i++){const email=`qareeb-test-${crypto.randomUUID()}@example.com`,password=`T-${crypto.randomUUID()}!`;const u=ok(await admin.auth.admin.createUser({email,password,email_confirm:true})).user;users.push(u.id);const client=createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false}});ok(await client.auth.signInWithPassword({email,password}));clients.push(client)}
   const [owner,renter,stranger]=clients;
+
+  // Public display names: a user can only set their own, once, and never edit another's.
+  assert.ok((await stranger.from('profiles').insert({id:users[0],display_name:'انتحال'})).error);
+  ok(await owner.from('profiles').insert({id:users[0],display_name:'أبو تجربة'}));
+  assert.equal(ok(await stranger.from('profiles').select('display_name').eq('id',users[0]).single()).display_name,'أبو تجربة');
+  assert.ok((await owner.from('profiles').update({display_name:'اسم آخر'}).eq('id',users[0])).error);
+
   assert.ok((await owner.rpc('create_item',{p_title:'اختبار أمني',p_description:'غرض مؤقت للاختبارات الآلية',p_category:'تصوير',p_price:75,p_phone:'0555555555',p_area:'الرياض',p_lat:24.781234,p_lng:46.634567,p_images:[]})).error);
   const id=ok(await owner.rpc('create_item',{p_title:'اختبار أمني',p_description:'غرض مؤقت للاختبارات الآلية',p_category:'تصوير',p_price:75,p_phone:'+966555555555',p_area:'الرياض',p_lat:24.781234,p_lng:46.634567,p_images:[]}));itemIds.push(id);
   const publicItem=ok(await stranger.from('items').select('*').eq('id',id).single());assert.equal(publicItem.lat,24.78);assert.equal(publicItem.lng,46.63);assert.equal(publicItem.contact_phone,'+966555555555');
