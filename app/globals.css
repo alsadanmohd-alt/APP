@@ -5,6 +5,9 @@
 .dialog-notice{padding:12px;background:#fff2d2;color:#624915;border-radius:10px;margin-bottom:16px;font-size:14px}
 .form-error{padding:12px;background:#fbeceb;color:#a23327;border-radius:10px;margin-bottom:16px;font-size:14px;font-weight:500}
 .auth-mode-row{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:14px;color:var(--muted)}
+.phone-row{display:flex;gap:8px}
+.phone-row select{flex:0 0 auto;width:auto;max-width:42%}
+.phone-row input{flex:1;min-width:0}
 .contact-row{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-top:6px}
 .contact-row a{display:inline-flex;align-items:center;gap:7px}
 .booking p a{display:inline-flex;align-items:center;gap:6px}
