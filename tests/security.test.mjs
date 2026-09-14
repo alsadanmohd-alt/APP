@@ -7,8 +7,10 @@ test('RLS, contact validation, private locations, chat, edit/delete',{skip:!(url
  const admin=createClient(url,service,{auth:{persistSession:false,autoRefreshToken:false}});const clients=[],users=[],itemIds=[];
  const ok=r=>{assert.equal(r.error,null,JSON.stringify(r.error));return r.data};
  try{
-  for(let i=0;i<3;i++){const email=`qareeb-test-${crypto.randomUUID()}@example.com`,password=`T-${crypto.randomUUID()}!`;const u=ok(await admin.auth.admin.createUser({email,password,email_confirm:true})).user;users.push(u.id);const client=createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false}});ok(await client.auth.signInWithPassword({email,password}));clients.push(client)}
-  const [owner,renter,stranger]=clients;
+  for(let i=0;i<4;i++){const email=`qareeb-test-${crypto.randomUUID()}@example.com`,password=`T-${crypto.randomUUID()}!`;const u=ok(await admin.auth.admin.createUser({email,password,email_confirm:true})).user;users.push(u.id);const client=createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false}});ok(await client.auth.signInWithPassword({email,password}));clients.push(client)}
+  const [owner,renter,stranger,staff]=clients;
+  // Grant platform-admin status the only way the client-side can't: direct service-role insert.
+  ok(await admin.from('admins').insert({id:users[3]}));
 
   // Public display names: a user can only set their own, once, and never edit another's.
   assert.ok((await stranger.from('profiles').insert({id:users[0],display_name:'انتحال'})).error);
@@ -64,6 +66,23 @@ test('RLS, contact validation, private locations, chat, edit/delete',{skip:!(url
   assert.equal(ok(await admin.from('messages').select('id').eq('booking_id',booking)).length,0);
   assert.equal(ok(await admin.from('reviews').select('id').eq('booking_id',booking)).length,0);
   assert.equal(ok(await admin.from('renter_reviews').select('id').eq('booking_id',booking)).length,0);
+  itemIds.length=0;
+
+  // Admin scope: listings + users only. Never the admins list itself, and never conversations.
+  assert.ok((await stranger.rpc('admin_list_users')).error);
+  assert.equal(ok(await stranger.from('admins').select('id').eq('id',users[3])).length,0);
+  const users2=ok(await staff.rpc('admin_list_users'));
+  assert.ok(Array.isArray(users2)&&users2.some(u=>u.id===users[1]));
+  assert.equal(ok(await staff.from('admins').select('id').eq('id',users[3]).single()).id,users[3]);
+
+  const id2=ok(await owner.rpc('create_item',{p_title:'اختبار صلاحية الإدارة',p_description:'غرض مؤقت للاختبارات الآلية',p_category:'تصوير',p_price:60,p_phone:'+966555555555',p_area:'الرياض',p_lat:24.781234,p_lng:46.634567,p_images:[]}));itemIds.push(id2);
+  const booking2=ok(await renter.rpc('start_conversation',{p_item:id2}));
+  ok(await renter.from('messages').insert({booking_id:booking2,sender_id:users[1],body:'رسالة خاصة أخرى'}));
+  // The admin can never read conversations, even ones on a listing they can otherwise moderate.
+  assert.equal(ok(await staff.from('bookings').select('id').eq('id',booking2)).length,0);
+  assert.equal(ok(await staff.from('messages').select('id').eq('booking_id',booking2)).length,0);
+  // But the admin can delete any listing, owner or not.
+  const deletedByStaff=ok(await staff.from('items').delete().eq('id',id2).select());assert.equal(deletedByStaff.length,1);
   itemIds.length=0;
  }finally{
   if(itemIds.length){const bs=ok(await admin.from('bookings').select('id').in('item_id',itemIds)).map(b=>b.id);if(bs.length){ok(await admin.from('messages').delete().in('booking_id',bs));ok(await admin.from('reviews').delete().in('booking_id',bs));ok(await admin.from('renter_reviews').delete().in('booking_id',bs))}ok(await admin.from('bookings').delete().in('item_id',itemIds));ok(await admin.from('items').delete().in('id',itemIds))}

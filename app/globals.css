@@ -54,3 +54,13 @@
 .legal-article{margin-top:28px;padding-top:20px;border-top:1px solid var(--line)}
 .legal-article h2{font-size:18px;margin-bottom:10px}
 .legal-article p{margin:8px 0;color:var(--ink);line-height:1.8}
+.admin-page{max-width:1100px;margin:0 auto;padding:38px 5vw 60px}
+.admin-page h1{margin-bottom:10px}
+.admin-scope-note{color:var(--muted);font-size:14px;margin-bottom:20px}
+.admin-list{list-style:none;padding:0;display:flex;flex-direction:column;gap:8px;margin:0 0 28px}
+.admin-list li{display:flex;justify-content:space-between;gap:12px;background:white;border:1px solid var(--line);border-radius:10px;padding:10px 14px;font-size:14px}
+.admin-table-wrap{overflow-x:auto}
+.admin-table{width:100%;border-collapse:collapse;background:white;border:1px solid var(--line);border-radius:12px;overflow:hidden;font-size:14px}
+.admin-table th,.admin-table td{padding:11px 14px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+.admin-table th{background:#f0f4f2;color:var(--muted);font-weight:600}
+.admin-table tr:last-child td{border-bottom:0}

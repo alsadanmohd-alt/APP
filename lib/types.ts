@@ -5,4 +5,5 @@ export type Review={id:string;booking_id:string;item_id:string;author_id:string;
 export type RenterReview={id:string;booking_id:string;renter_id:string;author_id:string;rating:number;body:string};
 export type Message={id:string;booking_id:string;sender_id:string;body:string;created_at:string};
 export type Profile={id:string;display_name:string};
+export type AdminUser={id:string;display_name:string;phone:string;created_at:string};
 export const categories=['الكل','تصوير','رحلات','أدوات ومعدات','رياضة','منزل','إلكترونيات','تجهيز الحفلات','أدوات مطبخ','أخرى'];

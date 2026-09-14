@@ -28,6 +28,10 @@ create table public.renter_reviews(id uuid primary key default gen_random_uuid()
 create table public.profiles(id uuid primary key references auth.users(id) on delete cascade,display_name text not null check(char_length(trim(display_name)) between 2 and 40),created_at timestamptz not null default now());
 -- Case-insensitive and trims surrounding whitespace before comparing.
 create unique index profiles_display_name_unique on public.profiles(lower(trim(display_name)));
+-- Marks an account as a platform admin. No insert/update/delete policy exists at all: admin
+-- status can only be granted from the Supabase SQL editor (or service role), never from the
+-- client, and the row is only readable by that same user (never listed publicly).
+create table public.admins(id uuid primary key references auth.users(id) on delete cascade,created_at timestamptz not null default now());
 alter table public.items enable row level security;
 alter table public.item_locations enable row level security;
 alter table public.bookings enable row level security;
@@ -35,8 +39,9 @@ alter table public.messages enable row level security;
 alter table public.reviews enable row level security;
 alter table public.renter_reviews enable row level security;
 alter table public.profiles enable row level security;
+alter table public.admins enable row level security;
 create policy items_read on public.items for select using(true);
-create policy items_delete on public.items for delete to authenticated using(owner_id=auth.uid());
+create policy items_delete on public.items for delete to authenticated using(owner_id=auth.uid() or exists(select 1 from public.admins a where a.id=auth.uid()));
 create policy bookings_read on public.bookings for select to authenticated using(auth.uid() in (owner_id,renter_id));
 -- item_locations has no select policy at all: the exact address is never sent to any client.
 -- Only get_pickup_distance() and get_owner_item_location() (security definer, bypass RLS) may
@@ -51,6 +56,7 @@ create policy renter_reviews_write on public.renter_reviews for insert to authen
 create policy profiles_read on public.profiles for select using(true);
 -- No update policy: the nickname is chosen once at first login and cannot be changed from the client afterward.
 create policy profiles_write on public.profiles for insert to authenticated with check(id=auth.uid());
+create policy admins_read_self on public.admins for select to authenticated using(id=auth.uid());
 -- Atomic creation: exact coordinates never enter public item rows.
 create function public.create_item(p_title text,p_description text,p_category text,p_price numeric,p_phone text,p_area text,p_lat double precision,p_lng double precision,p_images text[]) returns uuid
 language plpgsql security definer set search_path=public,pg_temp as $$
@@ -107,19 +113,29 @@ begin
  if not v_allowed then raise exception 'غير مصرح'; end if;
  return round((2*6371*asin(sqrt(sin(radians(v_loc.lat-p_lat)/2)^2+cos(radians(p_lat))*cos(radians(v_loc.lat))*sin(radians(v_loc.lng-p_lng)/2)^2)))::numeric,1);
 end $$;
+-- Admin-only: the full user list with phone numbers, for moderation and support. Never exposes
+-- conversations or messages — those stay unreadable by anyone but their two participants.
+create function public.admin_list_users() returns table(id uuid,display_name text,phone text,created_at timestamptz)
+language plpgsql security definer set search_path=public,pg_temp as $$
+begin
+ if not exists(select 1 from admins where id=auth.uid()) then raise exception 'غير مصرح'; end if;
+ return query select u.id,coalesce(p.display_name,'—'),u.phone,u.created_at from auth.users u left join profiles p on p.id=u.id order by u.created_at desc;
+end $$;
 revoke all on function public.create_item(text,text,text,numeric,text,text,double precision,double precision,text[]) from public;
 revoke all on function public.update_item(uuid,text,text,text,numeric,text,text,double precision,double precision,text[]) from public;
 revoke all on function public.get_owner_item_location(uuid) from public;
 revoke all on function public.start_conversation(uuid) from public;
 revoke all on function public.get_pickup_distance(uuid,double precision,double precision) from public;
+revoke all on function public.admin_list_users() from public;
 grant execute on function public.create_item(text,text,text,numeric,text,text,double precision,double precision,text[]) to authenticated;
 grant execute on function public.update_item(uuid,text,text,text,numeric,text,text,double precision,double precision,text[]) to authenticated;
 grant execute on function public.get_owner_item_location(uuid) to authenticated;
 grant execute on function public.start_conversation(uuid) to authenticated;
 grant execute on function public.get_pickup_distance(uuid,double precision,double precision) to authenticated;
-revoke all on public.items,public.item_locations,public.bookings,public.messages,public.reviews,public.renter_reviews,public.profiles from anon,authenticated;
+grant execute on function public.admin_list_users() to authenticated;
+revoke all on public.items,public.item_locations,public.bookings,public.messages,public.reviews,public.renter_reviews,public.profiles,public.admins from anon,authenticated;
 grant select on public.items,public.reviews,public.renter_reviews,public.profiles to anon,authenticated;
-grant select on public.bookings,public.messages to authenticated;
+grant select on public.bookings,public.messages,public.admins to authenticated;
 grant delete on public.items to authenticated;
 grant insert on public.messages,public.reviews,public.renter_reviews,public.profiles to authenticated;
 insert into storage.buckets(id,name,public,file_size_limit,allowed_mime_types) values('item-images','item-images',true,5242880,array['image/jpeg','image/png','image/webp']);
