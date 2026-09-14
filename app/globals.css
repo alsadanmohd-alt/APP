@@ -13,6 +13,7 @@
 .own-item-actions button{flex:1;font-size:13px;padding:8px 10px;min-height:36px}
 .secondary.danger{color:#b23b2f;border-color:#f0c9c2}
 .secondary.danger:hover{background:#fdecea}
+.role-tag{display:inline-block;background:#edf1ef;color:var(--muted);font-size:12px;padding:3px 10px;border-radius:15px;margin-bottom:6px}
 
 .mobile-bottom-nav{display:none}
 @media(max-width:760px){
