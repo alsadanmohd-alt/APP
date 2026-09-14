@@ -32,6 +32,12 @@ test('RLS, contact validation, private locations, chat, edit/delete',{skip:!(url
   assert.ok((await stranger.from('reviews').insert({booking_id:booking,item_id:id,author_id:users[2],rating:5,body:'not mine'})).error);
   ok(await renter.from('reviews').insert({booking_id:booking,item_id:id,author_id:users[1],rating:5,body:'ممتاز'}));
 
+  // Mirror: only the owner of the conversation can rate the renter, and only as themselves.
+  assert.ok((await renter.from('renter_reviews').insert({booking_id:booking,renter_id:users[1],author_id:users[1],rating:5,body:'not mine'})).error);
+  assert.ok((await stranger.from('renter_reviews').insert({booking_id:booking,renter_id:users[1],author_id:users[2],rating:5,body:'not mine'})).error);
+  ok(await owner.from('renter_reviews').insert({booking_id:booking,renter_id:users[1],author_id:users[0],rating:4,body:'مستأجر ملتزم'}));
+  assert.equal(ok(await stranger.from('renter_reviews').select('*').eq('booking_id',booking)).length,1);
+
   // Owner can edit; nobody else can. The exact pickup point is only readable by the owner.
   assert.ok((await renter.rpc('update_item',{p_id:id,p_title:'تعديل غير مصرح',p_description:'غرض مؤقت للاختبارات الآلية',p_category:'تصوير',p_price:80,p_phone:'+966555555555',p_area:'الرياض',p_lat:24.78,p_lng:46.63})).error);
   ok(await owner.rpc('update_item',{p_id:id,p_title:'اختبار أمني معدّل',p_description:'غرض مؤقت للاختبارات الآلية',p_category:'تصوير',p_price:90,p_phone:'+966555555555',p_area:'الرياض',p_lat:24.781234,p_lng:46.634567}));
@@ -39,16 +45,17 @@ test('RLS, contact validation, private locations, chat, edit/delete',{skip:!(url
   assert.ok((await renter.rpc('get_owner_item_location',{p_item:id})).error);
   const ownLoc=ok(await owner.rpc('get_owner_item_location',{p_item:id}));assert.equal(ownLoc[0].lat,24.781234);
 
-  // Only the owner can delete, and it cascades to the conversation, its messages and review.
+  // Only the owner can delete, and it cascades to the conversation, its messages and both reviews.
   const deletedByOther=ok(await renter.from('items').delete().eq('id',id).select());assert.equal(deletedByOther.length,0);
   assert.ok(ok(await stranger.from('items').select('id').eq('id',id)).length===1);
   ok(await owner.from('items').delete().eq('id',id));
   assert.equal(ok(await admin.from('bookings').select('id').eq('id',booking)).length,0);
   assert.equal(ok(await admin.from('messages').select('id').eq('booking_id',booking)).length,0);
   assert.equal(ok(await admin.from('reviews').select('id').eq('booking_id',booking)).length,0);
+  assert.equal(ok(await admin.from('renter_reviews').select('id').eq('booking_id',booking)).length,0);
   itemIds.length=0;
  }finally{
-  if(itemIds.length){const bs=ok(await admin.from('bookings').select('id').in('item_id',itemIds)).map(b=>b.id);if(bs.length){ok(await admin.from('messages').delete().in('booking_id',bs));ok(await admin.from('reviews').delete().in('booking_id',bs))}ok(await admin.from('bookings').delete().in('item_id',itemIds));ok(await admin.from('items').delete().in('id',itemIds))}
+  if(itemIds.length){const bs=ok(await admin.from('bookings').select('id').in('item_id',itemIds)).map(b=>b.id);if(bs.length){ok(await admin.from('messages').delete().in('booking_id',bs));ok(await admin.from('reviews').delete().in('booking_id',bs));ok(await admin.from('renter_reviews').delete().in('booking_id',bs))}ok(await admin.from('bookings').delete().in('item_id',itemIds));ok(await admin.from('items').delete().in('id',itemIds))}
   for(const id of users)await admin.auth.admin.deleteUser(id);
  }
 });
