@@ -14,7 +14,7 @@ create table public.item_locations(item_id uuid primary key references public.it
 -- else (dates, price, handover) directly by phone or chat.
 create table public.bookings (
  id uuid primary key default gen_random_uuid(), item_id uuid not null references public.items(id) on delete cascade, renter_id uuid not null references auth.users(id), owner_id uuid not null references auth.users(id),
- status text not null default 'active' check(status in ('active','completed')), created_at timestamptz not null default now(),
+ created_at timestamptz not null default now(),
  check(owner_id<>renter_id)
 );
 create index bookings_participants on public.bookings(renter_id,owner_id);
@@ -37,7 +37,7 @@ create policy bookings_read on public.bookings for select to authenticated using
 create policy messages_read on public.messages for select to authenticated using(exists(select 1 from public.bookings b where b.id=booking_id and auth.uid() in (b.owner_id,b.renter_id)));
 create policy messages_send on public.messages for insert to authenticated with check(sender_id=auth.uid() and exists(select 1 from public.bookings b where b.id=booking_id and auth.uid() in(b.owner_id,b.renter_id)));
 create policy reviews_read on public.reviews for select using(true);
-create policy reviews_write on public.reviews for insert to authenticated with check(author_id=auth.uid() and exists(select 1 from public.bookings b where b.id=booking_id and b.item_id=reviews.item_id and b.renter_id=auth.uid() and b.status='completed'));
+create policy reviews_write on public.reviews for insert to authenticated with check(author_id=auth.uid() and exists(select 1 from public.bookings b where b.id=booking_id and b.item_id=reviews.item_id and b.renter_id=auth.uid()));
 -- Atomic creation: exact coordinates never enter public item rows.
 create function public.create_item(p_title text,p_description text,p_category text,p_price numeric,p_phone text,p_area text,p_lat double precision,p_lng double precision,p_images text[]) returns uuid
 language plpgsql security definer set search_path=public,pg_temp as $$
@@ -94,29 +94,16 @@ begin
  if not v_allowed then raise exception 'غير مصرح'; end if;
  return round((2*6371*asin(sqrt(sin(radians(v_loc.lat-p_lat)/2)^2+cos(radians(p_lat))*cos(radians(v_loc.lat))*sin(radians(v_loc.lng-p_lng)/2)^2)))::numeric,1);
 end $$;
--- The only remaining status transition: the owner flags a conversation as a completed
--- rental so its renter can leave one review.
-create function public.mark_completed(p_booking uuid) returns void
-language plpgsql security definer set search_path=public,pg_temp as $$
-declare b bookings%rowtype;
-begin
- select * into strict b from bookings where id=p_booking for update;
- if auth.uid() is null or auth.uid()<>b.owner_id then raise exception 'غير مصرح'; end if;
- if b.status<>'active' then raise exception 'لا يمكن تغيير حالة هذا التواصل'; end if;
- update bookings set status='completed' where id=b.id;
-end $$;
 revoke all on function public.create_item(text,text,text,numeric,text,text,double precision,double precision,text[]) from public;
 revoke all on function public.update_item(uuid,text,text,text,numeric,text,text,double precision,double precision,text[]) from public;
 revoke all on function public.get_owner_item_location(uuid) from public;
 revoke all on function public.start_conversation(uuid) from public;
 revoke all on function public.get_pickup_distance(uuid,double precision,double precision) from public;
-revoke all on function public.mark_completed(uuid) from public;
 grant execute on function public.create_item(text,text,text,numeric,text,text,double precision,double precision,text[]) to authenticated;
 grant execute on function public.update_item(uuid,text,text,text,numeric,text,text,double precision,double precision,text[]) to authenticated;
 grant execute on function public.get_owner_item_location(uuid) to authenticated;
 grant execute on function public.start_conversation(uuid) to authenticated;
 grant execute on function public.get_pickup_distance(uuid,double precision,double precision) to authenticated;
-grant execute on function public.mark_completed(uuid) to authenticated;
 revoke all on public.items,public.item_locations,public.bookings,public.messages,public.reviews from anon,authenticated;
 grant select on public.items,public.reviews to anon,authenticated;
 grant select on public.bookings,public.messages to authenticated;

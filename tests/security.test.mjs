@@ -28,13 +28,7 @@ test('RLS, contact validation, private locations, chat, edit/delete',{skip:!(url
   assert.equal(ok(await stranger.from('messages').select('*').eq('booking_id',booking)).length,0);
   assert.ok((await stranger.from('messages').insert({booking_id:booking,sender_id:users[2],body:'غير مصرح'})).error);
 
-  // Only the owner can mark a conversation completed, and only once.
-  assert.ok((await renter.rpc('mark_completed',{p_booking:booking})).error);
-  assert.ok((await renter.from('bookings').update({status:'completed'}).eq('id',booking)).error);
-  ok(await owner.rpc('mark_completed',{p_booking:booking}));
-  assert.ok((await owner.rpc('mark_completed',{p_booking:booking})).error);
-
-  // Reviews require a completed conversation and belong to the renter.
+  // Reviews only require an existing conversation and belong to the renter; no completion step exists.
   assert.ok((await stranger.from('reviews').insert({booking_id:booking,item_id:id,author_id:users[2],rating:5,body:'not mine'})).error);
   ok(await renter.from('reviews').insert({booking_id:booking,item_id:id,author_id:users[1],rating:5,body:'ممتاز'}));
 
