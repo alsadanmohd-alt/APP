@@ -14,8 +14,11 @@
 .secondary.danger{color:#b23b2f;border-color:#f0c9c2}
 .secondary.danger:hover{background:#fdecea}
 .role-tag{display:inline-block;background:#edf1ef;color:var(--muted);font-size:12px;padding:3px 10px;border-radius:15px;margin-bottom:6px}
-.rating-stars{display:inline-flex;align-items:center;gap:1px;margin-right:8px;margin-bottom:6px}
+.rating-stars{display:inline-flex;align-items:center;gap:1px}
 .rating-count{font-size:12px;color:var(--muted);margin-left:4px}
+.profile-top{display:flex;justify-content:flex-end;margin-bottom:14px}
+.profile-ratings{display:flex;gap:14px;flex-wrap:wrap}
+.rating-pill{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);background:white;border:1px solid var(--line);padding:4px 10px;border-radius:20px}
 
 .mobile-bottom-nav{display:none}
 @media(max-width:760px){
