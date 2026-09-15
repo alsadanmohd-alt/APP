@@ -21,7 +21,7 @@ async function cleanImage(file:File):Promise<Blob>{
  if(!['image/jpeg','image/png','image/webp'].includes(file.type)||file.size>5*1024*1024)throw Error('اختر صور JPG أو PNG أو WebP بحجم أقل من 5 ميجابايت');
  const bitmap=await createImageBitmap(file);const scale=Math.min(1,1600/Math.max(bitmap.width,bitmap.height));const canvas=document.createElement('canvas');canvas.width=Math.round(bitmap.width*scale);canvas.height=Math.round(bitmap.height*scale);canvas.getContext('2d')!.drawImage(bitmap,0,0,canvas.width,canvas.height);bitmap.close();return new Promise((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(Error('تعذرت معالجة الصورة')),'image/webp',.85));
 }
-export default function Marketplace({initialItemId}:{initialItemId?:string}){
+export default function Marketplace({initialItemId,initialProfileId}:{initialItemId?:string;initialProfileId?:string}){
  const [items,setItems]=useState<Item[]>(db?[]:demo),[user,setUser]=useState<User|null>(null),[loading,setLoading]=useState(!!db),[busy,setBusy]=useState(false),[notice,setNotice]=useState('');
  const [view,setView]=useState<'explore'|'dashboard'>('explore'),[modal,setModal]=useState<'auth'|'add'|'nickname'|null>(null),[selected,setSelected]=useState<Item|null>(null),[editingItem,setEditingItem]=useState<Item|null>(null);
  const [query,setQuery]=useState(''),[category,setCategory]=useState('الكل'),[radius,setRadius]=useState(20),[maxPrice,setMaxPrice]=useState(1000),[minPrice,setMinPrice]=useState(0),[filters,setFilters]=useState(false),[mode,setMode]=useState<'both'|'list'|'map'>('both');
@@ -43,6 +43,8 @@ export default function Marketplace({initialItemId}:{initialItemId?:string}){
  const visible=useMemo(()=>items.filter(i=>(category==='الكل'||i.category===category)&&(i.title+' '+i.description+' '+i.area).includes(query)&&i.daily_price>=minPrice&&i.daily_price<=maxPrice&&distanceKm(center,i)<=radius),[items,category,query,minPrice,maxPrice,center,radius]);
  const initialOpened=useRef(false);
  useEffect(()=>{if(initialOpened.current||!initialItemId||loading)return;initialOpened.current=true;const found=items.find(i=>i.id===initialItemId);if(found)setSelected(found);else setNotice('الغرض غير موجود أو تعذر تحميله')},[initialItemId,items,loading]);
+ const initialProfileOpened=useRef(false);
+ useEffect(()=>{if(initialProfileOpened.current||!initialProfileId)return;initialProfileOpened.current=true;setProfileUser(initialProfileId);setView('dashboard')},[initialProfileId]);
  useEffect(()=>{const back=()=>{const id=window.location.pathname.split('/items/')[1];setSelected(items.find(i=>i.id===id)||null)};window.addEventListener('popstate',back);return()=>window.removeEventListener('popstate',back)},[items]);
  const choose=useCallback((item:Item)=>{setNotice('');setSelected(item);window.history.pushState(null,'',`/items/${item.id}`)},[]);
  const closeDetails=()=>{setSelected(null);window.history.pushState(null,'','/')};

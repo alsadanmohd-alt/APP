@@ -59,8 +59,8 @@ export default function AdminPage(){
     <tbody>{items.map(i=><tr key={i.id}><td>{i.title}</td><td>{i.category}</td><td>{i.daily_price} ر.س</td><td>{i.area}</td><td>{i.created_at?new Date(i.created_at).toLocaleDateString('ar-SA'):''}</td><td><button disabled={busy} className="icon-button" aria-label="حذف الغرض" onClick={()=>deleteItem(i.id,i.title)}><Trash2 size={16}/></button></td></tr>)}</tbody>
    </table></div>
   </section>}
-  {tab==='users'&&<section><div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>الاسم المستعار</th><th>الجوال</th><th>تاريخ التسجيل</th></tr></thead>
-   <tbody>{users.map(u=><tr key={u.id}><td>{u.display_name}</td><td dir="ltr">{u.phone}</td><td>{new Date(u.created_at).toLocaleDateString('ar-SA')}</td></tr>)}</tbody>
+  {tab==='users'&&<section><div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>الاسم المستعار</th><th>الجوال</th><th>تاريخ التسجيل</th><th></th></tr></thead>
+   <tbody>{users.map(u=><tr key={u.id}><td>{u.display_name}</td><td dir="ltr">{u.phone}</td><td>{new Date(u.created_at).toLocaleDateString('ar-SA')}</td><td><a className="text-button" href={`/users/${u.id}`} target="_blank" rel="noopener noreferrer">الملف الشخصي</a></td></tr>)}</tbody>
   </table></div></section>}
  </div>;
 }
