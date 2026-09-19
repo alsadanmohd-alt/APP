@@ -6,7 +6,7 @@ create table public.items (
  contact_phone text not null check(contact_phone ~ '^\+[1-9][0-9]{7,14}$'),
  daily_price numeric(10,2) not null check(daily_price>0 and daily_price<=100000), area text not null check(char_length(area) between 2 and 100),
  lat double precision not null check(lat between -90 and 90), lng double precision not null check(lng between -180 and 180),
- images text[] not null default '{}', created_at timestamptz not null default now(), check(cardinality(images)<=5)
+ images text[] not null default '{}', show_exact_location boolean not null default false, created_at timestamptz not null default now(), check(cardinality(images)<=5)
 );
 create table public.item_locations(item_id uuid primary key references public.items(id) on delete cascade,lat double precision not null check(lat between -90 and 90),lng double precision not null check(lng between -180 and 180));
 -- No approval step: a "booking" row is just an open contact thread between a
@@ -57,22 +57,27 @@ create policy profiles_read on public.profiles for select using(true);
 -- No update policy: the nickname is chosen once at first login and cannot be changed from the client afterward.
 create policy profiles_write on public.profiles for insert to authenticated with check(id=auth.uid());
 create policy admins_read_self on public.admins for select to authenticated using(id=auth.uid());
--- Atomic creation: exact coordinates never enter public item rows.
-create function public.create_item(p_title text,p_description text,p_category text,p_price numeric,p_phone text,p_area text,p_lat double precision,p_lng double precision,p_images text[]) returns uuid
+-- Exact coordinates only enter the public item row when the owner opts in via p_show_exact;
+-- otherwise the public row keeps a rounded (~1km) approximation. item_locations always keeps
+-- the exact point regardless, for get_pickup_distance/get_owner_item_location.
+create function public.create_item(p_title text,p_description text,p_category text,p_price numeric,p_phone text,p_area text,p_lat double precision,p_lng double precision,p_images text[],p_show_exact boolean default false) returns uuid
 language plpgsql security definer set search_path=public,pg_temp as $$
 declare v_id uuid;
 begin
  if auth.uid() is null then raise exception 'يلزم تسجيل الدخول'; end if;
- insert into items(owner_id,title,description,category,daily_price,contact_phone,area,lat,lng,images) values(auth.uid(),p_title,p_description,p_category,p_price,p_phone,p_area,round(p_lat::numeric,2),round(p_lng::numeric,2),p_images) returning id into v_id;
+ insert into items(owner_id,title,description,category,daily_price,contact_phone,area,lat,lng,images,show_exact_location) values(auth.uid(),p_title,p_description,p_category,p_price,p_phone,p_area,case when p_show_exact then p_lat else round(p_lat::numeric,2) end,case when p_show_exact then p_lng else round(p_lng::numeric,2) end,p_images,coalesce(p_show_exact,false)) returning id into v_id;
  insert into item_locations values(v_id,p_lat,p_lng); return v_id;
 end $$;
 -- p_images null keeps the item's existing photos unchanged; pass a full array to replace them.
-create function public.update_item(p_id uuid,p_title text,p_description text,p_category text,p_price numeric,p_phone text,p_area text,p_lat double precision,p_lng double precision,p_images text[] default null) returns void
+-- p_show_exact null keeps the item's current exact-location choice unchanged.
+create function public.update_item(p_id uuid,p_title text,p_description text,p_category text,p_price numeric,p_phone text,p_area text,p_lat double precision,p_lng double precision,p_images text[] default null,p_show_exact boolean default null) returns void
 language plpgsql security definer set search_path=public,pg_temp as $$
+declare v_show_exact boolean;
 begin
  if auth.uid() is null then raise exception 'يلزم تسجيل الدخول'; end if;
  if not exists(select 1 from items where id=p_id and owner_id=auth.uid()) then raise exception 'غير مصرح'; end if;
- update items set title=p_title,description=p_description,category=p_category,daily_price=p_price,contact_phone=p_phone,area=p_area,lat=round(p_lat::numeric,2),lng=round(p_lng::numeric,2),images=coalesce(p_images,images) where id=p_id;
+ select coalesce(p_show_exact,show_exact_location) into v_show_exact from items where id=p_id;
+ update items set title=p_title,description=p_description,category=p_category,daily_price=p_price,contact_phone=p_phone,area=p_area,lat=case when v_show_exact then p_lat else round(p_lat::numeric,2) end,lng=case when v_show_exact then p_lng else round(p_lng::numeric,2) end,images=coalesce(p_images,images),show_exact_location=v_show_exact where id=p_id;
  update item_locations set lat=p_lat,lng=p_lng where item_id=p_id;
 end $$;
 -- Lets an owner see their own item's exact pickup point again when editing it. Never callable for anyone else's item.
@@ -121,14 +126,14 @@ begin
  if not exists(select 1 from admins where id=auth.uid()) then raise exception 'غير مصرح'; end if;
  return query select u.id,coalesce(p.display_name,'—'),u.phone,u.created_at from auth.users u left join profiles p on p.id=u.id order by u.created_at desc;
 end $$;
-revoke all on function public.create_item(text,text,text,numeric,text,text,double precision,double precision,text[]) from public;
-revoke all on function public.update_item(uuid,text,text,text,numeric,text,text,double precision,double precision,text[]) from public;
+revoke all on function public.create_item(text,text,text,numeric,text,text,double precision,double precision,text[],boolean) from public;
+revoke all on function public.update_item(uuid,text,text,text,numeric,text,text,double precision,double precision,text[],boolean) from public;
 revoke all on function public.get_owner_item_location(uuid) from public;
 revoke all on function public.start_conversation(uuid) from public;
 revoke all on function public.get_pickup_distance(uuid,double precision,double precision) from public;
 revoke all on function public.admin_list_users() from public;
-grant execute on function public.create_item(text,text,text,numeric,text,text,double precision,double precision,text[]) to authenticated;
-grant execute on function public.update_item(uuid,text,text,text,numeric,text,text,double precision,double precision,text[]) to authenticated;
+grant execute on function public.create_item(text,text,text,numeric,text,text,double precision,double precision,text[],boolean) to authenticated;
+grant execute on function public.update_item(uuid,text,text,text,numeric,text,text,double precision,double precision,text[],boolean) to authenticated;
 grant execute on function public.get_owner_item_location(uuid) to authenticated;
 grant execute on function public.start_conversation(uuid) to authenticated;
 grant execute on function public.get_pickup_distance(uuid,double precision,double precision) to authenticated;
