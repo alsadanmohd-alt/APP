@@ -42,10 +42,20 @@
  .mobile-add{color:var(--green)!important}.mobile-add-icon{width:42px;height:42px;margin-top:-24px;border-radius:50%;background:var(--green);color:#fff;display:grid;place-items:center;box-shadow:0 5px 16px #087f6840;border:4px solid #fff}
  dialog{width:100vw;max-width:100vw;margin:auto 0 0 0;border-radius:22px 22px 0 0;max-height:92dvh;padding:18px 15px;padding-bottom:calc(22px + env(safe-area-inset-bottom))}
  dialog::backdrop{background:#102d2677}.detail>.item-art,.detail>.item-image{height:205px}
+ .modal-head.brand{margin:-18px -15px 20px;border-radius:22px 22px 0 0;padding:18px 15px}
 }
 
 .test-divider{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:12px}.test-divider:before,.test-divider:after{content:'';height:1px;background:var(--line);flex:1}.test-login{border-style:dashed;color:var(--green)}
 .image-previews{display:flex;flex-wrap:wrap;gap:10px}.image-preview{position:relative;width:84px;height:84px}.image-preview img{width:100%;height:100%;object-fit:cover;border-radius:10px;border:1px solid var(--line)}.image-preview button{position:absolute;top:-7px;left:-7px;width:22px;height:22px;border-radius:50%;background:var(--dark);color:#fff;display:grid;place-items:center;box-shadow:0 2px 6px #0004}
+.modal-head-text{flex:1;min-width:0}
+.modal-head.brand{margin:-24px -24px 20px;padding:22px 24px;border-radius:22px 22px 0 0;background:linear-gradient(135deg,var(--green),var(--dark));color:#fff;align-items:flex-start}
+.modal-head.brand h2{color:#fff}
+.modal-head.brand p{color:#ffffffcc;font-size:13px;margin-top:4px}
+.modal-head.brand .icon-button{color:#fff}
+.modal-head.brand .icon-button:hover{background:#ffffff26}
+.modal-logo{flex-shrink:0;width:42px;height:42px;border-radius:12px;background:#ffffff26;display:grid;place-items:center;color:#fff}
+.form-section{display:flex;align-items:center;gap:7px;font-size:13px;font-weight:600;color:var(--green);letter-spacing:.2px;margin-top:8px;padding-top:16px;border-top:1px solid var(--line)}
+.form-section:first-of-type{border-top:0;padding-top:0;margin-top:0}
 .legal-page{background:var(--bg);min-height:100dvh}
 .legal-wrap{max-width:760px;margin:0 auto;padding:40px 20px 80px}
 .legal-wrap h1{font-size:32px;margin:24px 0 4px}
