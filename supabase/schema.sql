@@ -118,6 +118,15 @@ begin
  if not v_allowed then raise exception 'غير مصرح'; end if;
  return round((2*6371*asin(sqrt(sin(radians(v_loc.lat-p_lat)/2)^2+cos(radians(p_lat))*cos(radians(v_loc.lat))*sin(radians(v_loc.lng-p_lng)/2)^2)))::numeric,1);
 end $$;
+-- Lets an owner bump their item's created_at to now(), so it reads as freshly
+-- posted again (top of the "nearest" sort, "posted just now" badge).
+create function public.renew_item(p_id uuid) returns void
+language plpgsql security definer set search_path=public,pg_temp as $$
+begin
+ if auth.uid() is null then raise exception 'يلزم تسجيل الدخول'; end if;
+ if not exists(select 1 from items where id=p_id and owner_id=auth.uid()) then raise exception 'غير مصرح'; end if;
+ update items set created_at=now() where id=p_id;
+end $$;
 -- Admin-only: the full user list with phone numbers, for moderation and support. Never exposes
 -- conversations or messages — those stay unreadable by anyone but their two participants.
 create function public.admin_list_users() returns table(id uuid,display_name text,phone text,created_at timestamptz)
@@ -131,12 +140,14 @@ revoke all on function public.update_item(uuid,text,text,text,numeric,text,text,
 revoke all on function public.get_owner_item_location(uuid) from public;
 revoke all on function public.start_conversation(uuid) from public;
 revoke all on function public.get_pickup_distance(uuid,double precision,double precision) from public;
+revoke all on function public.renew_item(uuid) from public;
 revoke all on function public.admin_list_users() from public;
 grant execute on function public.create_item(text,text,text,numeric,text,text,double precision,double precision,text[],boolean) to authenticated;
 grant execute on function public.update_item(uuid,text,text,text,numeric,text,text,double precision,double precision,text[],boolean) to authenticated;
 grant execute on function public.get_owner_item_location(uuid) to authenticated;
 grant execute on function public.start_conversation(uuid) to authenticated;
 grant execute on function public.get_pickup_distance(uuid,double precision,double precision) to authenticated;
+grant execute on function public.renew_item(uuid) to authenticated;
 grant execute on function public.admin_list_users() to authenticated;
 revoke all on public.items,public.item_locations,public.bookings,public.messages,public.reviews,public.renter_reviews,public.profiles,public.admins from anon,authenticated;
 grant select on public.items,public.reviews,public.renter_reviews,public.profiles to anon,authenticated;
