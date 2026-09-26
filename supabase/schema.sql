@@ -21,11 +21,10 @@ create index bookings_participants on public.bookings(renter_id,owner_id);
 create unique index bookings_one_per_renter on public.bookings(item_id,renter_id);
 create table public.messages(id uuid primary key default gen_random_uuid(),booking_id uuid not null references public.bookings(id) on delete cascade,sender_id uuid not null references auth.users(id),body text not null check(char_length(trim(body)) between 1 and 2000),created_at timestamptz not null default now());
 create index messages_booking on public.messages(booking_id,created_at);
--- The renter rates the owner (advertiser) after a booking, not any specific item. Shown
--- publicly on the owner's profile for everyone to see.
-create table public.reviews(id uuid primary key default gen_random_uuid(),booking_id uuid not null unique references public.bookings(id) on delete cascade,owner_id uuid not null references auth.users(id),author_id uuid not null references auth.users(id),rating int not null check(rating between 1 and 5),body text not null check(char_length(trim(body)) between 1 and 1000),created_at timestamptz not null default now());
--- Mirrors reviews, but the owner rates the renter instead of the renter rating the owner.
-create table public.renter_reviews(id uuid primary key default gen_random_uuid(),booking_id uuid not null unique references public.bookings(id) on delete cascade,renter_id uuid not null references auth.users(id),author_id uuid not null references auth.users(id),rating int not null check(rating between 1 and 5),body text not null check(char_length(trim(body)) between 1 and 1000),created_at timestamptz not null default now());
+-- Either side of a booking may rate the other once (renter rates owner, or owner rates
+-- renter) — no distinction between the two in how the rating is stored or shown. subject_id
+-- is whoever is being rated; the result is shown publicly on their profile for everyone to see.
+create table public.reviews(id uuid primary key default gen_random_uuid(),booking_id uuid not null references public.bookings(id) on delete cascade,subject_id uuid not null references auth.users(id),author_id uuid not null references auth.users(id),rating int not null check(rating between 1 and 5),body text not null check(char_length(trim(body)) between 1 and 1000),created_at timestamptz not null default now(),unique(booking_id,author_id));
 -- One row per user, chosen once at first login and shown publicly on their listings and profile.
 create table public.profiles(id uuid primary key references auth.users(id) on delete cascade,display_name text not null check(char_length(trim(display_name)) between 2 and 40),created_at timestamptz not null default now());
 -- Case-insensitive and trims surrounding whitespace before comparing.
@@ -39,7 +38,6 @@ alter table public.item_locations enable row level security;
 alter table public.bookings enable row level security;
 alter table public.messages enable row level security;
 alter table public.reviews enable row level security;
-alter table public.renter_reviews enable row level security;
 alter table public.profiles enable row level security;
 alter table public.admins enable row level security;
 create policy items_read on public.items for select using(true);
@@ -52,9 +50,7 @@ create policy bookings_read on public.bookings for select to authenticated using
 create policy messages_read on public.messages for select to authenticated using(exists(select 1 from public.bookings b where b.id=booking_id and auth.uid() in (b.owner_id,b.renter_id)));
 create policy messages_send on public.messages for insert to authenticated with check(sender_id=auth.uid() and exists(select 1 from public.bookings b where b.id=booking_id and auth.uid() in(b.owner_id,b.renter_id)));
 create policy reviews_read on public.reviews for select using(true);
-create policy reviews_write on public.reviews for insert to authenticated with check(author_id=auth.uid() and exists(select 1 from public.bookings b where b.id=booking_id and b.owner_id=reviews.owner_id and b.renter_id=auth.uid()));
-create policy renter_reviews_read on public.renter_reviews for select using(true);
-create policy renter_reviews_write on public.renter_reviews for insert to authenticated with check(author_id=auth.uid() and exists(select 1 from public.bookings b where b.id=booking_id and b.owner_id=auth.uid() and b.renter_id=renter_reviews.renter_id));
+create policy reviews_write on public.reviews for insert to authenticated with check(author_id=auth.uid() and exists(select 1 from public.bookings b where b.id=booking_id and auth.uid() in (b.owner_id,b.renter_id) and subject_id=(case when b.owner_id=auth.uid() then b.renter_id else b.owner_id end)));
 create policy profiles_read on public.profiles for select using(true);
 -- No update policy: the nickname is chosen once at first login and cannot be changed from the client afterward.
 create policy profiles_write on public.profiles for insert to authenticated with check(id=auth.uid());
@@ -151,11 +147,11 @@ grant execute on function public.start_conversation(uuid) to authenticated;
 grant execute on function public.get_pickup_distance(uuid,double precision,double precision) to authenticated;
 grant execute on function public.renew_item(uuid) to authenticated;
 grant execute on function public.admin_list_users() to authenticated;
-revoke all on public.items,public.item_locations,public.bookings,public.messages,public.reviews,public.renter_reviews,public.profiles,public.admins from anon,authenticated;
-grant select on public.items,public.reviews,public.renter_reviews,public.profiles to anon,authenticated;
+revoke all on public.items,public.item_locations,public.bookings,public.messages,public.reviews,public.profiles,public.admins from anon,authenticated;
+grant select on public.items,public.reviews,public.profiles to anon,authenticated;
 grant select on public.bookings,public.messages,public.admins to authenticated;
 grant delete on public.items to authenticated;
-grant insert on public.messages,public.reviews,public.renter_reviews,public.profiles to authenticated;
+grant insert on public.messages,public.reviews,public.profiles to authenticated;
 insert into storage.buckets(id,name,public,file_size_limit,allowed_mime_types) values('item-images','item-images',true,5242880,array['image/jpeg','image/png','image/webp']);
 create policy images_upload on storage.objects for insert to authenticated with check(bucket_id='item-images' and (storage.foldername(name))[1]=auth.uid()::text);
 -- Images are public. The browser re-encodes uploaded images to strip EXIF/GPS.
