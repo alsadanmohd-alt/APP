@@ -116,7 +116,7 @@ export default function Marketplace({initialItemId,initialProfileId}:{initialIte
  <button className={view==='explore'?'active':''} onClick={()=>{setView('explore');setCategory('الكل');window.scrollTo({top:0,behavior:'smooth'})}}><House size={21}/><span>الرئيسية</span></button>
  <button className={view==='search'?'active':''} onClick={()=>setView('search')}><Compass size={21}/><span>استكشف</span></button>
  <button className="mobile-add" onClick={()=>{if(requireUser()){setEditingItem(null);setAddPoint(null);setAddRegion(null);setAddCity(null);setAddNeighborhood('');setAddImages([]);setAddExactLocation(false);setLocatingGps(false);setModal('add')}}}><span className="mobile-add-icon"><Plus size={25}/></span><span>أضف غرض</span></button>
- <button className={view==='chats'?'active':''} onClick={()=>{if(requireUser())setView('chats')}}><ClipboardList size={21}/><span>طلباتي</span></button>
+ <button className={view==='chats'?'active':''} onClick={()=>{if(requireUser())setView('chats')}}><ClipboardList size={21}/><span>محادثاتي</span></button>
  <button className={view==='dashboard'&&viewingSelf&&dashboardTab==='items'?'active':''} onClick={()=>{if(user){setProfileUser(null);setDashboardTab('items');setView('dashboard')}else setModal('auth')}}><UserRound size={21}/><span>حسابي</span></button>
  </nav><footer><a className="brand" href="/">قريب.</a><span>استخدام أكثر، امتلاك أقل.</span><span>نسخة أولية · الدفع والترتيبات عند الاستلام</span></footer>
  {modal==='auth'&&<Modal title="الدخول برقم الجوال" close={()=>setModal(null)}><PhoneLogin onSuccess={()=>{setModal(null);setNotice('تم تسجيل الدخول');refresh()}}/></Modal>}
